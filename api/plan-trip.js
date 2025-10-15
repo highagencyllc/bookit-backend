@@ -4,36 +4,44 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const { destination, budget } = req.body;
+
   const placesKey = process.env.PLACES_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
 
+  console.log("Places Key Loaded:", !!placesKey);
+  console.log("OpenAI Key Loaded:", !!openaiKey);
+
+  if (!placesKey || !openaiKey) {
+    return res.status(500).json({ error: "Missing API keys in environment variables" });
+  }
+
   try {
-    // Helper to get top 3 places from Google Places API
+    // Fetch top 3 hotels/restaurants/attractions
     async function getPlaces(query) {
       const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query + ' in ' + destination)}&key=${placesKey}`;
       const response = await fetch(url);
       const data = await response.json();
-      if (!data.results) return [];
-      return data.results.slice(0, 3).map(p => ({
+      return data.results?.slice(0, 3).map(p => ({
         name: p.name,
         rating: p.rating,
         address: p.formatted_address
-      }));
+      })) || [];
     }
 
     const hotels = await getPlaces("hotels");
     const restaurants = await getPlaces("restaurants");
     const attractions = await getPlaces("things to do");
 
-    // Generate itinerary with GPT
     const prompt = `
 Plan a 3-day trip to ${destination} with a budget of ${budget}.
-Include day-by-day recommendations using these real options:
+Use these options:
 
 Hotels: ${JSON.stringify(hotels)}
 Restaurants: ${JSON.stringify(restaurants)}
 Attractions: ${JSON.stringify(attractions)}
 `;
+
+    console.log("Prompt being sent to OpenAI:", prompt);
 
     const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -49,12 +57,17 @@ Attractions: ${JSON.stringify(attractions)}
     });
 
     const gptData = await gptResponse.json();
-    const plan = gptData.choices?.[0]?.message?.content || "No plan generated.";
+    console.log("OpenAI Response:", gptData);
 
+    if (gptData.error) {
+      return res.status(500).json({ error: "OpenAI API error", details: gptData.error });
+    }
+
+    const plan = gptData.choices?.[0]?.message?.content || "No plan generated.";
     res.status(200).json({ plan });
 
   } catch (error) {
-    console.error(error);
+    console.error("Server error:", error);
     res.status(500).json({ error: "Server error", details: error.message });
   }
 }
