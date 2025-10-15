@@ -1,6 +1,9 @@
 export default async function handler(req, res) {
   const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) return res.status(500).json({ error: "Missing OpenAI key" });
+
+  if (!openaiKey) {
+    return res.status(500).json({ error: "Missing OpenAI API key in environment variables" });
+  }
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -10,12 +13,18 @@ export default async function handler(req, res) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "gpt-4",
-        messages: [{ role: "user", content: "Say hello from your API" }]
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: "Say hello from your API" }],
+        temperature: 0.7
       })
     });
 
     const data = await response.json();
+
+    if (data.error) {
+      return res.status(500).json({ error: data.error });
+    }
+
     res.status(200).json(data);
 
   } catch (err) {
